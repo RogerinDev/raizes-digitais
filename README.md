@@ -12,7 +12,7 @@ Através do desenvolvimento de um **Assistente Virtual inteligente**, buscamos a
 
 ## 🚀 Acesse o Portfólio
 A apresentação visual e estrutural do projeto está disponível online:
-👉 **[Acessar Portfólio do Raízes Digitais](https://https://rogerindev.github.io/raizes-digitais/)** 
+👉 **[Acessar Portfólio do Raízes Digitais](https://rogerindev.github.io/raizes-digitais/)** 
 
 ## 🛠️ Tecnologias Empregadas
 O desenvolvimento do ecossistema e do Assistente Virtual baseia-se nas seguintes tecnologias e conceitos:
