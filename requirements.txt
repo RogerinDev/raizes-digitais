@@ -1,0 +1,15 @@
+fastapi
+uvicorn
+python-telegram-bot
+langchain
+langchain-google-genai
+langchain-community
+langchain-postgres
+psycopg[binary]
+supabase
+pdfplumber
+pydantic
+pydantic-settings
+python-dotenv
+asyncpg
+pgvector
