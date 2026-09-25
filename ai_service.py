@@ -66,7 +66,7 @@ def consult_agricultural_manual(query: str) -> str:
         return "Nenhuma informação técnica encontrada nos manuais para esta pergunta."
         
     # 3. Processa e concatena apenas o campo "content" para leitura do LLM
-    return "\\n\\n".join([doc['content'] for doc in docs])
+    return "\n\n".join([doc['content'] for doc in docs])
 
 # Tool injetada no LangChain para combater alucinações (RAG)
 tools = [consult_agricultural_manual]
@@ -129,7 +129,9 @@ class AgriculturalAgent:
         """
         keywords = ['agrotóxico', 'defensivo', 'herbicida', 'fungicida', 'inseticida', 'pulverização', 'veneno', 'químico', 'aplicar', 'dosagem']
         if any(keyword in text.lower() for keyword in keywords):
-            return text + "\\n\\nAviso: Esta é uma orientação baseada em literatura técnica. A avaliação presencial de um agrônomo é indispensável antes de qualquer aplicação."
+            return text + """
+
+Aviso: Esta é uma orientação baseada em literatura técnica. A avaliação presencial de um agrônomo é indispensável antes de qualquer aplicação."""
         return text
 
     def clean_markdown(self, text: str) -> str:
@@ -178,7 +180,7 @@ async def process_pdf_for_admin(text: str):
     text_splitter = RecursiveCharacterTextSplitter(
         chunk_size=1000,
         chunk_overlap=200,
-        separators=["\\n\\n", "\\n", " ", ""]
+        separators=["\n\n", "\n", " ", ""]
     )
     docs = text_splitter.create_documents([text])
     
@@ -193,12 +195,12 @@ async def ask_pdf_for_user(text: str, question: str) -> str:
     from langchain_core.prompts import PromptTemplate
     
     prompt_pdf = PromptTemplate.from_template(
-        "Baseado EXCLUSIVAMENTE no texto a seguir (extraído de um PDF), responda à pergunta do usuário.\\n\\n"
-        "Texto:\\n{context}\\n\\n"
-        "Pergunta: {question}\\n\\n"
-        "REGRAS ESTRITAS:\\n"
-        "1. PROIBIDO o uso de Markdown. Não use asteriscos, itálico, negrito.\\n"
-        "2. Retorne apenas texto puro.\\n"
+        "Baseado EXCLUSIVAMENTE no texto a seguir (extraído de um PDF), responda à pergunta do usuário.\n\n"
+        "Texto:\n{context}\n\n"
+        "Pergunta: {question}\n\n"
+        "REGRAS ESTRITAS:\n"
+        "1. PROIBIDO o uso de Markdown. Não use asteriscos, itálico, negrito.\n"
+        "2. Retorne apenas texto puro.\n"
         "3. Não invente nada fora do texto fornecido."
     )
     
@@ -213,6 +215,8 @@ async def ask_pdf_for_user(text: str, question: str) -> str:
     
     keywords = ['agrotóxico', 'defensivo', 'herbicida', 'fungicida', 'inseticida', 'pulverização', 'veneno', 'químico', 'aplicar', 'dosagem']
     if any(keyword in output.lower() for keyword in keywords):
-        output += "\\n\\nAviso: Esta é uma orientação baseada em literatura técnica. A avaliação presencial de um agrônomo é indispensável antes de qualquer aplicação."
+        output += """
+
+Aviso: Esta é uma orientação baseada em literatura técnica. A avaliação presencial de um agrônomo é indispensável antes de qualquer aplicação."""
     
     return output

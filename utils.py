@@ -39,8 +39,8 @@ def extract_text_from_pdf(pdf_path: str) -> str:
         for page in pdf.pages:
             page_text = page.extract_text()
             if page_text:
-                text += page_text + "\\n"
+                text += page_text + "\n"
                 
     # Limpar quebras de linha duplicadas
-    text = re.sub(r'\\n+', '\\n', text)
+    text = re.sub(r'\n+', '\n', text)
     return text
