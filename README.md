@@ -34,7 +34,17 @@ git clone https://github.com/RogerinDev/raizes-digitais.git
 cd raizes-digitais
 ```
 
-### 2. Configurar o Ambiente Virtual (VENV)
+### 2. Configuração da Base de Dados (Supabase)
+Para que a Inteligência Artificial armazene e acesse memórias de chat e realize as buscas híbridas nos manuais agronômicos, é necessário configurar a infraestrutura de banco de dados.
+
+1. Crie um projeto gratuito na plataforma [Supabase](https://supabase.com/).
+2. No painel de navegação esquerdo do projeto recém-criado, acesse o **SQL Editor**.
+3. Copie integralmente o conteúdo do arquivo `supabase_schema.sql` (localizado na raiz deste repositório) e cole no editor.
+4. Clique em **RUN** para executá-lo. 
+
+Este script provisionará automaticamente a extensão de Inteligência Artificial (`pgvector`), criará as tabelas de `documents`, `chat_memory`, `chat_mapping` e configurará as funções (Stored Procedures) de Busca Híbrida.
+
+### 3. Configurar o Ambiente Virtual (VENV)
 É estritamente recomendado criar um ambiente virtual isolado para proteger as bibliotecas.
 ```bash
 python3 -m venv venv
@@ -45,13 +55,13 @@ source venv/bin/activate
 venv\Scripts\activate
 ```
 
-### 3. Instalar as Dependências
+### 4. Instalar as Dependências
 Com o ambiente ativado, instale todas as bibliotecas necessárias:
 ```bash
 pip install -r requirements.txt
 ```
 
-### 4. Configurar as Variáveis de Ambiente
+### 5. Configurar as Variáveis de Ambiente
 Crie uma cópia do arquivo de exemplo `.env.example` e renomeie-a para `.env`.
 Em um terminal Unix (ou copie/cole manualmente):
 ```bash
@@ -65,7 +75,7 @@ Abra o arquivo `.env` e alimente-o com suas próprias chaves e acessos:
 - `POSTGRES_CONNECTION_STRING`: String de conexão SQL do Supabase. Recomendado usar o **Session Pooler** (na porta 5432) apontando para o seu nó (ex: `aws-0-us-east-1`).
 - `TELEGRAM_WEBHOOK_URL`: (Veremos no próximo passo como configurar essa chave com o ngrok).
 
-### 5. Configurar o Ngrok (Túnel Local)
+### 6. Configurar o Ngrok (Túnel Local)
 Como a API do Telegram exige segurança (HTTPS) para comunicar eventos (Webhook) em tempo real, precisamos expor nossa porta local:
 1. Abra um terminal **separado** (mantenha aberto rodando em segundo plano).
 2. Inicie o Ngrok na porta 8000, onde o FastAPI do backend rodará:
@@ -78,14 +88,14 @@ ngrok http 8000
    TELEGRAM_WEBHOOK_URL="https://quail-revision-scrap.ngrok-free.dev/webhook"
    ```
 
-### 6. Ativar e Sincronizar o Webhook no Telegram
+### 7. Ativar e Sincronizar o Webhook no Telegram
 Agora que o link seguro existe, rode o script utilitário criado para registrar e sincronizar a sua URL gerada com a API oficial do Telegram:
 ```bash
 python setup_webhook.py
 ```
 > *A resposta deverá ser um "✅ Sucesso" com um log completo retornando as chaves do Telegram validadas.*
 
-### 7. Iniciar a Aplicação (FastAPI)
+### 8. Iniciar a Aplicação (FastAPI)
 Com tudo alinhado e conectado com o banco de dados (certifique-se de já ter habilitado a extensão `pgvector` e as tabelas `documents` / `chat_memory` em sua conta Supabase), inicie a rede neural:
 ```bash
 python main.py
