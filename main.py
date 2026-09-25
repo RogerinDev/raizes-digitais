@@ -20,6 +20,56 @@ logger = logging.getLogger(__name__)
 bot = Bot(token=settings.TELEGRAM_BOT_TOKEN)
 application = Application.builder().token(settings.TELEGRAM_BOT_TOKEN).build()
 
+import psycopg
+import asyncio
+
+async def recuperar_mensagens_pendentes(app: Application):
+    """
+    Varre o banco de dados em busca de mensagens que ficaram sem resposta do bot (última mensagem == 'human')
+    e as processa em background.
+    """
+    logger.info("Iniciando varredura de mensagens pendentes no banco...")
+    try:
+        conn = psycopg.connect(settings.POSTGRES_CONNECTION_STRING)
+        cursor = conn.cursor()
+        
+        # Query para buscar a última mensagem de cada sessão cruzando com o chat_mapping
+        query = """
+        WITH RankedMessages AS (
+            SELECT session_id, message,
+                   ROW_NUMBER() OVER(PARTITION BY session_id ORDER BY id DESC) as rn
+            FROM chat_memory
+        )
+        SELECT rm.session_id, rm.message, cm.telegram_chat_id
+        FROM RankedMessages rm
+        JOIN chat_mapping cm ON rm.session_id = cm.uuid_session_id
+        WHERE rm.rn = 1;
+        """
+        cursor.execute(query)
+        results = cursor.fetchall()
+        conn.close()
+        
+        for session_uuid, message_json, telegram_chat_id in results:
+            msg_type = message_json.get("type")
+            if msg_type == "human":
+                # Bot não respondeu a essa mensagem!
+                content = message_json.get("data", {}).get("content", "")
+                logger.info(f"Recuperando pendência do usuário Telegram ID: {telegram_chat_id}")
+                
+                try:
+                    # Instanciamos o agente passando o ID real numérico para que ele obedeça a lógica local de hash
+                    agent = AgriculturalAgent(session_id=str(telegram_chat_id))
+                    response = await agent.ainvoke(content)
+                    
+                    # Usa o telegram_chat_id real recuperado pelo JOIN
+                    await app.bot.send_message(chat_id=telegram_chat_id, text=response)
+                except Exception as ex:
+                    logger.error(f"Falha ao enviar resposta recuperada: {ex}")
+                    
+        logger.info("Varredura de mensagens pendentes concluída.")
+    except Exception as e:
+        logger.error(f"Erro geral na recuperação de mensagens: {e}")
+
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     """
@@ -30,6 +80,9 @@ async def lifespan(app: FastAPI):
     await application.initialize()
     await application.start()
     await bot.set_webhook(url=settings.TELEGRAM_WEBHOOK_URL)
+    
+    # Executa a recuperação de mensagens como tarefa de fundo na inicialização
+    asyncio.create_task(recuperar_mensagens_pendentes(application))
     
     yield
     
@@ -61,10 +114,14 @@ async def handle_text_message(update: Update, context: ContextTypes.DEFAULT_TYPE
         await humanized_send_message(update, context, response)
         
     except Exception as e:
-        logger.error(f"Erro ao processar mensagem de texto: {e}")
+        logger.error(f"Erro ao processar mensagem de texto (Timeout/503/Outros): {e}")
+        mensagem_erro = (
+            "Amigo produtor, meu sistema está recebendo muitas consultas ao mesmo tempo agora. "
+            "Por favor, aguarde uns minutinhos e me pergunte novamente! 🌱"
+        )
         await context.bot.send_message(
             chat_id=user_id, 
-            text="Tivemos um problema técnico. Tente novamente mais tarde."
+            text=mensagem_erro
         )
 
 async def handle_document_message(update: Update, context: ContextTypes.DEFAULT_TYPE):

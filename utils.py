@@ -20,7 +20,7 @@ async def humanized_send_message(update: Update, context: CallbackContext, text:
         )
         
         # Delay dinâmico baseado no tamanho do texto fatiado
-        delay = max(len(p) * 0.05, 1.5)
+        delay = max(len(p) * 0.02, 0.5)
         await asyncio.sleep(delay)
         
         # Dispara a mensagem

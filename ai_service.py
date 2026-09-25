@@ -10,8 +10,11 @@ from langchain_text_splitters import RecursiveCharacterTextSplitter
 from supabase import create_client, Client
 import psycopg
 import uuid
+import asyncio
 from config import settings
 
+# Trava global para enfileirar as requisições à API do Gemini e evitar bloqueios de concorrência
+agent_lock = asyncio.Lock()
 # Inicializando Supabase Client
 supabase: Client = create_client(settings.SUPABASE_URL, settings.SUPABASE_SERVICE_KEY)
 
@@ -33,20 +36,37 @@ vector_store = SupabaseVectorStore(
 llm = ChatGoogleGenerativeAI(
     model="gemini-3.5-flash-lite",
     temperature=0.2,
-    google_api_key=settings.GOOGLE_API_KEY
+    google_api_key=settings.GOOGLE_API_KEY,
+    max_retries=3,
+    timeout=90
 )
 
 @tool
 def consult_agricultural_manual(query: str) -> str:
     """
     Consulte esta ferramenta OBRIGATORIAMENTE sempre que precisar responder a dúvidas técnicas sobre cafeicultura.
-    Ela busca em nossa base de dados oficial e confiável (Supabase Vector Store).
+    Ela busca em nossa base de dados oficial e confiável.
     Você não deve inventar informações.
     """
-    docs = vector_store.similarity_search(query, k=4)
+    # 1. Gera o vetor matemático (embedding) a partir do texto puro
+    embedding_gerado = embeddings.embed_query(query)
+    
+    # 2. Chama a procedure RPC match_documents direto no cliente Supabase (Busca Híbrida)
+    response = supabase.rpc(
+        "match_documents", 
+        {
+            "query_text": query, 
+            "query_embedding": embedding_gerado, 
+            "match_count": 4
+        }
+    ).execute()
+    
+    docs = response.data
     if not docs:
         return "Nenhuma informação técnica encontrada nos manuais para esta pergunta."
-    return "\\n\\n".join([doc.page_content for doc in docs])
+        
+    # 3. Processa e concatena apenas o campo "content" para leitura do LLM
+    return "\\n\\n".join([doc['content'] for doc in docs])
 
 # Tool injetada no LangChain para combater alucinações (RAG)
 tools = [consult_agricultural_manual]
@@ -79,6 +99,16 @@ class AgriculturalAgent:
         # Memória persistente no PostgreSQL via LangChain
         # Converte o ID numérico do Telegram em um UUID válido e constante (determinístico)
         session_uuid = str(uuid.uuid5(uuid.NAMESPACE_DNS, f"telegram_{session_id}"))
+        
+        # Grava a relação UUID <-> Telegram ID para futura recuperação
+        try:
+            supabase.table("chat_mapping").upsert({
+                "uuid_session_id": session_uuid,
+                "telegram_chat_id": int(session_id)
+            }).execute()
+        except Exception as e:
+            import logging
+            logging.getLogger(__name__).error(f"Erro ao salvar mapping: {e}")
         
         conn = psycopg.connect(settings.POSTGRES_CONNECTION_STRING)
         self.history = PostgresChatMessageHistory(
@@ -116,10 +146,12 @@ class AgriculturalAgent:
         """
         chat_history = self.history.messages
         
-        result = await self.agent_executor.ainvoke({
-            "input": user_input,
-            "chat_history": chat_history
-        })
+        # Garante que apenas uma requisição acesse o LLM por vez
+        async with agent_lock:
+            result = await self.agent_executor.ainvoke({
+                "input": user_input,
+                "chat_history": chat_history
+            })
         
         output = result['output']
         
@@ -171,7 +203,10 @@ async def ask_pdf_for_user(text: str, question: str) -> str:
     )
     
     chain = prompt_pdf | llm
-    res = await chain.ainvoke({"context": text, "question": question})
+    
+    # Protege a chamada do modelo para respeitar o limite de concorrência da API gratuita
+    async with agent_lock:
+        res = await chain.ainvoke({"context": text, "question": question})
     
     output = res.content
     output = re.sub(r'(\*\*|\*|__|_|#)', '', output).strip()
