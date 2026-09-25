@@ -3,7 +3,7 @@ import os
 from contextlib import asynccontextmanager
 from fastapi import FastAPI, Request, BackgroundTasks
 from telegram import Update, Bot
-from telegram.ext import Application, MessageHandler, filters, ContextTypes
+from telegram.ext import Application, MessageHandler, CommandHandler, filters, ContextTypes
 
 from config import settings
 from utils import humanized_send_message, extract_text_from_pdf
@@ -54,6 +54,18 @@ async def recuperar_mensagens_pendentes(app: Application):
             if msg_type == "human":
                 # Bot não respondeu a essa mensagem!
                 content = message_json.get("data", {}).get("content", "")
+                
+                # Ignora comandos de barra (como /start) que ficaram travados no banco de reboots anteriores
+                if content.startswith("/"):
+                    logger.info(f"Descartando comando fantasma do usuário {telegram_chat_id}: {content}")
+                    try:
+                        # Adiciona uma mensagem vazia da IA só para mudar o último registro e destravar a fila
+                        agent = AgriculturalAgent(session_id=str(telegram_chat_id))
+                        agent.history.add_ai_message("Comando interceptado.")
+                    except Exception:
+                        pass
+                    continue
+                    
                 logger.info(f"Recuperando pendência do usuário Telegram ID: {telegram_chat_id}")
                 
                 try:
@@ -92,6 +104,27 @@ async def lifespan(app: FastAPI):
 
 # Instância do FastAPI
 app = FastAPI(title="Raízes Digitais - IA Agrícola", lifespan=lifespan)
+
+async def handle_start(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """
+    Intercepta o comando /start para enviar uma saudação imediata sem gastar tokens da IA.
+    Salva a resposta no banco para não travar a rotina de mensagens pendentes.
+    """
+    mensagem_boas_vindas = """Olá! 🌱 Bem-vindo ao Assistente Raízes Digitais da Minasul. Estou aqui para te ajudar com dúvidas sobre a lavoura, pragas, defensivos e muito mais!
+
+Para eu te atender melhor, me conte: Qual é o seu nome? E você prefere que eu dê respostas mais curtas e diretas ou explicações bem detalhadas? (Se preferir, pode só fazer sua pergunta direto que eu sigo o fluxo padrão!)"""
+    
+    # Envio imediato sem delay artificial
+    await update.message.reply_text(mensagem_boas_vindas)
+    
+    # Salva no banco de dados para formalizar que a mensagem foi respondida (evita loop de pendência)
+    try:
+        user_id = str(update.effective_user.id)
+        agent = AgriculturalAgent(session_id=user_id)
+        agent.history.add_user_message("/start")
+        agent.history.add_ai_message(mensagem_boas_vindas)
+    except Exception as e:
+        logger.error(f"Erro ao salvar /start no histórico: {e}")
 
 async def handle_text_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """
@@ -175,6 +208,7 @@ async def handle_document_message(update: Update, context: ContextTypes.DEFAULT_
             os.remove(file_path)
 
 # Registrando os Handlers na aplicação do Telegram
+application.add_handler(CommandHandler("start", handle_start))
 application.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_text_message))
 application.add_handler(MessageHandler(filters.Document.ALL, handle_document_message))
 
