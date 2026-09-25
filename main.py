@@ -124,9 +124,12 @@ async def handle_text_message(update: Update, context: ContextTypes.DEFAULT_TYPE
             text=mensagem_erro
         )
 
+# Define os IDs dos administradores (insira seu ID numérico real aqui)
+ADMIN_IDS = [settings.ADMIN_TELEGRAM_ID]
+
 async def handle_document_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """
-    Lida com documentos PDF enviados, roteando entre Admin (Ingestão RAG) e Produtor (Análise AdHoc).
+    Lida com documentos PDF enviados, roteando entre Admin (Ingestão RAG) e Produtor (Análise BYOD na memória).
     """
     user_id = update.effective_user.id
     document = update.message.document
@@ -144,39 +147,27 @@ async def handle_document_message(update: Update, context: ContextTypes.DEFAULT_
         # Extrai e limpa o texto do PDF
         text = extract_text_from_pdf(file_path)
         
-        # Roteamento de Fluxo Baseado no ID do Usuário
-        if user_id == settings.ADMIN_TELEGRAM_ID:
-            # Fluxo Administrador: Ingestão de Conhecimento
-            await context.bot.send_message(chat_id=user_id, text="Recebi o manual. Iniciando processamento e ingestão no banco...")
-            
+        # 1. Fluxo do Administrador (Base Global)
+        if user_id in ADMIN_IDS:
+            await context.bot.send_message(chat_id=user_id, text="Lendo documento para a base global...")
             await process_pdf_for_admin(text)
-            
-            await context.bot.send_message(chat_id=user_id, text="✅ Chefe, manual salvo com sucesso!")
+            await context.bot.send_message(chat_id=user_id, text="Documento processado e adicionado à base de conhecimento da Minasul!")
         
+        # 2. Fluxo do Produtor (Contexto da Conversa / BYOD)
         else:
-            # Fluxo Produtor Padrão: Perguntas sobre o PDF
-            caption = update.message.caption
+            await context.bot.send_message(chat_id=user_id, text="Li o seu documento! Pode me fazer perguntas sobre ele.")
             
-            if not caption:
-                await context.bot.send_message(
-                    chat_id=user_id, 
-                    text="Recebi seu PDF. Por favor, faça uma pergunta sobre ele na legenda do arquivo ou na sua próxima mensagem."
-                )
-                return
+            # Instancia o Agente para acessar o histórico local
+            agent = AgriculturalAgent(session_id=str(user_id))
             
-            await context.bot.send_chat_action(chat_id=user_id, action="typing")
-            
-            # Chama o LLM passando o conteúdo do PDF
-            response = await ask_pdf_for_user(text, caption)
-            
-            # Envia resposta de forma humanizada
-            await humanized_send_message(update, context, response)
+            # Salva o conteúdo do PDF como se fosse uma mensagem enorme do usuário na memória
+            agent.history.add_user_message(f"Aqui está um documento da minha fazenda para você analisar:\\n\\n{text}")
             
     except Exception as e:
         logger.error(f"Erro ao processar documento PDF: {e}")
         await context.bot.send_message(
             chat_id=user_id, 
-            text="Ocorreu um erro ao ler o documento ou ao contatar os serviços. Tente novamente."
+            text="Ocorreu um erro ao ler o documento. Tente novamente."
         )
     finally:
         # Limpeza do arquivo temporário

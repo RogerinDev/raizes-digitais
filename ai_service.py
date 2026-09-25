@@ -176,8 +176,8 @@ async def process_pdf_for_admin(text: str):
     Fluxo do Administrador: Processa o PDF, fatia em pedaços e converte em embeddings.
     """
     text_splitter = RecursiveCharacterTextSplitter(
-        chunk_size=2500,
-        chunk_overlap=300,
+        chunk_size=1000,
+        chunk_overlap=200,
         separators=["\\n\\n", "\\n", " ", ""]
     )
     docs = text_splitter.create_documents([text])
